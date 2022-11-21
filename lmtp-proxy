@@ -8,49 +8,38 @@
 #
 
 import argparse
-import asyncore
+import asyncio
 import grp
 import os
 import pwd
 import signal
 import smtplib
 import syslog
-import sys
 
-from lmtpd import LMTPServer
+from aiosmtpd.controller import Controller, UnixSocketController
+from aiosmtpd.handlers import Proxy
+from aiosmtpd.lmtp import LMTP
 import yaml
 
 
-class LMTPProxy(LMTPServer):
-    def __init__(self, address, owner=-1, group=-1, permissions=None):
+class LMTPController(Controller):
+    """Controller for LMTP usage"""
 
+    def factory(self):
+        return LMTP(self.handler, **self.SMTP_kwargs)
+
+
+class UnixSocketLMTPController(UnixSocketController):
+    """UnixSocketController for LMTP usage"""
+
+    def factory(self):
+        return LMTP(self.handler, **self.SMTP_kwargs)
+
+
+class LMTPProxy(Proxy):
+    def __init__(self):
         self.config = None
         self.options = {}
-
-        # In case we get a unix socket, we need to remove the file first
-        if address[0] == "/":
-            try:
-                os.unlink(address)
-            except OSError:
-                if os.path.exists(address):
-                    raise
-            address_text = address
-        else:
-            address = tuple(address)
-            address_text = f"{address[0]}:{address[1]}"
-
-        LMTPServer.__init__(self, address)
-
-        # Make sure the file has the necessary permissions
-        if address[0] == "/":
-            if owner is not None:
-                os.chown(address, pwd.getpwnam(owner).pw_uid, -1)
-            if group is not None:
-                os.chown(address, -1, grp.getgrnam(owner).gr_gid)
-            if permissions is not None:
-                os.chmod(address, permissions)
-
-        self.log(f"Listening for incoming connection on {address_text}")
 
     def log(self, message):
         if not self.options.get("daemonize", False):
@@ -65,77 +54,57 @@ class LMTPProxy(LMTPServer):
             raise RuntimeError("No fallback backend configured")
         return backend
 
-    def lmtp_deliver(self, backend, mailfrom, rcptto, data):
-        if backend == "reject":
-            self.log(
-                f"LMTP message from <{mailfrom}> to <{rcptto}> temporarily rejected"
-            )
-            return f"450 LMTP user {rcptto} rejected. Please try again."
-
-        backend_data = self.config["backends"].get(backend, None)
-        if backend_data is None:
-            self.log(f"No backend configuration found for backend {backend}")
-            return f"451 No backend configuration found for backend {backend}"
-
-        if "socket" in backend_data:
-            server = smtplib.LMTP(backend_data["socket"])
-            address_text = backend_data["socket"]
-        else:
-            server = smtplib.LMTP(backend_data["host"], backend_data["port"])
-            address_text = f"{backend_data['host']}:{backend_data['port']}"
-
-        if "user" in backend_data and "password" in backend_data:
-            server.login(backend_data["user"], backend_data["password"])
-
-        try:
-            server.sendmail(mailfrom, rcptto, data)
-            server.quit()
-            self.log(
-                f"LMTP message from <{mailfrom}> to <{rcptto}> delivered to {backend} ({address_text})"
-            )
-            return None
-        except smtplib.SMTPRecipientsRefused as e:
-            server.quit()
-            code = dict(e[0]).values()[0][0]
-            msg = (dict(e[0]).values()[0][1]).split("\n")
-            output = []
-            i = 0
-            for line in msg:
-                if (i + 1) == len(msg):
-                    sep = " "
-                else:
-                    sep = "-"
-                output.append(f"{code}{sep}{line}")
-                i += 1
-            formatted_output = "\n".join(output)
-            self.log(
-                f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}). {formatted_output}"
-            )
-            return "\r\n".join(output)
-        except:
-            server.quit()
-            error = " ".join(map(str, sys.exc_info()[1]))
-            self.log(
-                f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}): {error}"
-            )
-            return error
-
-    def process_message(self, peer, mailfrom, rcptto, data):
+    def lookup_user(self, rcpt_to):
         local_part_suffix = self.config["config"].get("localPartSuffix", False)
-        user = rcptto
+
+        user = rcpt_to
         if local_part_suffix:
             login = user.split(local_part_suffix)[0]
             domain = user.split("@")[1]
             user = f"{login}@{domain}"
         if self.config["config"].get("ignoreDomain", False):
             user = user.split("@")[0]
+        return user
+
+    def _deliver(self, mail_from, rcpt_tos, data):
+        """Overide aiosmtpd.handlers.Proxy._deliver to use an LMTP client"""
+        refused = {}
+
+        user = self.lookup_user(rcpt_tos[0])
 
         backend = self.lookup_user_backend(user)
 
-        self.log(
-            f"Incoming message from <{mailfrom}> to <{rcptto}>, forwarding to {backend} backend"
-        )
-        return self.lmtp_deliver(backend, mailfrom, rcptto, data)
+        if backend == "reject":
+            self.log(
+                f"LMTP message from <{mail_from}> to <{rcpt_tos[0]}> temporarily rejected"
+            )
+            return f"450 LMTP user {rcpt_tos} rejected. Please try again."
+
+        backend_data = self.config["backends"].get(backend, None)
+        if backend_data is None:
+            self.log(f"No backend configuration found for backend {backend}")
+            return f"451 No backend configuration found for backend {backend}"
+
+        try:
+            lmtp_client = smtplib.LMTP()
+            lmtp_client.connect(backend_data["host"], backend_data["port"])
+            try:
+                refused = lmtp_client.sendmail(mail_from, user, data)
+                self.log(
+                    f"LMTP message from <{mail_from}> to <{user}> delivered to {backend}"
+                )
+            finally:
+                lmtp_client.quit()
+        except smtplib.SMTPRecipientsRefused as recipients_refused_error:
+            self.log("got SMTPRecipientsRefused")
+            refused = recipients_refused_error.recipients
+        except (OSError, smtplib.SMTPException) as lmtp_send_error:
+            self.log(f"got {lmtp_send_error.__class__}")
+            errcode = getattr(lmtp_send_error, "smtp_code", -1)
+            errmsg = getattr(lmtp_send_error, "smtp_error", b"ignore")
+            for rcpt_to in rcpt_tos:
+                refused[rcpt_to] = (errcode, errmsg)
+        return refused
 
     def reload_user_list(self):
         try:
@@ -177,7 +146,21 @@ def parse_config(file):
     return config
 
 
-def main():
+def configure_unix_socket(address, owner, group, permissions):
+    try:
+        os.unlink(address)
+    except OSError:
+        if os.path.exists(address):
+            raise
+    if owner is not None:
+        os.chown(address, pwd.getpwnam(owner).pw_uid, -1)
+    if group is not None:
+        os.chown(address, -1, grp.getgrnam(owner).gr_gid)
+    if permissions is not None:
+        os.chmod(address, permissions)
+
+
+async def main(loop):
     options = parse_cmdline()
     config = parse_config(options.config)
     tmp = {"daemonize": options.daemonize, "config": options.config}
@@ -192,16 +175,24 @@ def main():
     group = config["config"].get("group", None)
     permissions = config["config"].get("permissions", None)
 
-    server = LMTPProxy(address, owner, group, permissions)
-    server.config = config
-    server.options = tmp
+    lmtp_handler = LMTPProxy()
+    lmtp_handler.config = config
+    lmtp_handler.options = tmp
 
-    signal.signal(signal.SIGUSR1, server.reload_user_list)
+    if address[0] == "/":
+        configure_unix_socket(address, owner, group, permissions)
+        controller = UnixSocketLMTPController(lmtp_handler, unix_socket=address)
+        address_text = address
+    else:
+        address = tuple(address)
+        address_text = f"{address[0]}:{address[1]}"
+        controller = LMTPController(lmtp_handler, hostname=address[0], port=address[1])
 
-    try:
-        asyncore.loop()
-    except KeyboardInterrupt:
-        asyncore.ExitNow()
+    signal.signal(signal.SIGUSR1, lmtp_handler.reload_user_list)
+    signal.signal(signal.SIGTERM, controller.stop)
+
+    lmtp_handler.log(f"Listening for incoming connection on {address_text}")
+    controller.start()
 
 
 if __name__ == "__main__":
@@ -215,4 +206,9 @@ if __name__ == "__main__":
 
         daemon = Daemonize(app="lmtp-proxy", pid=pid, action=main)
         daemon.start()
-    main()
+    loop = asyncio.get_event_loop()
+    loop.create_task(main(loop=loop))
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
