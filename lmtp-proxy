@@ -36,7 +36,7 @@ class LMTPProxy(LMTPServer):
             address_text = address
         else:
             address = tuple(address)
-            address_text = "{}:{}".format(*address)
+            address_text = f"{address[0]}:{address[1]}"
 
         LMTPServer.__init__(self, address)
 
@@ -49,7 +49,7 @@ class LMTPProxy(LMTPServer):
             if permissions is not None:
                 os.chmod(address, permissions)
 
-        self.log("Listening for incoming connection on {}".format(address_text))
+        self.log(f"Listening for incoming connection on {address_text}")
 
     def log(self, message):
         if not self.options.get("daemonize", False):
@@ -64,20 +64,20 @@ class LMTPProxy(LMTPServer):
 
     def lmtp_deliver(self, backend, mailfrom, rcptto, data):
         if backend == "reject":
-            self.log("LMTP message from <{}> to <{}> temporarily rejected".format(mailfrom, rcptto))
-            return "450 LMTP user {} rejected. Please try again.".format(rcptto)
+            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> temporarily rejected")
+            return f"450 LMTP user {rcptto} rejected. Please try again."
 
         backend_data = self.config["backends"].get(backend, None)
         if backend_data is None:
-            self.log("No backend configuration found for backend {}".format(backend))
-            return "451 No backend configuration found for backend {}".format(backend)
+            self.log(f"No backend configuration found for backend {backend}")
+            return f"451 No backend configuration found for backend {backend}"
 
         if "socket" in backend_data:
             server = smtplib.LMTP(backend_data["socket"])
             address_text = backend_data["socket"]
         else:
             server = smtplib.LMTP(backend_data["host"], backend_data["port"])
-            address_text = "{}:{}".format(backend_data["host"], backend_data["port"])
+            address_text = f"{backend_data['host']}:{backend_data['port']}"
 
         if "user" in backend_data and "password" in backend_data:
             server.login(backend_data["user"], backend_data["password"])
@@ -85,7 +85,7 @@ class LMTPProxy(LMTPServer):
         try:
             server.sendmail(mailfrom, rcptto, data)
             server.quit()
-            self.log("LMTP message from <{}> to <{}> delivered to {} ({})".format(mailfrom, rcptto, backend, address_text))
+            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> delivered to {backend} ({address_text})")
             return None
         except smtplib.SMTPRecipientsRefused as e:
             server.quit()
@@ -98,34 +98,37 @@ class LMTPProxy(LMTPServer):
                     sep = " "
                 else:
                     sep = "-"
-                output.append("{}{}{}".format(code, sep, line))
+                output.append(f"{code}{sep}{line}")
                 i += 1
-            self.log("LMTP message from <{}> to <{}> not delivered to {} ({}). {}".format(mailfrom, rcptto, backend, address_text, "\n".join(output)))
+            formatted_output = "\n".join(output)
+            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}). {formatted_output}")
             return "\r\n".join(output)
         except:
             server.quit()
             error = " ".join(map(str, sys.exc_info()[1]))
-            self.log("LMTP message from <{}> to <{}> not delivered to {} ({}): {}".format(mailfrom, rcptto, backend, address_text, error))
+            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}): {error}")
             return error
 
     def process_message(self, peer, mailfrom, rcptto, data):
         local_part_suffix = self.config["config"].get("localPartSuffix", False)
         user = rcptto
         if local_part_suffix:
-            user = "{}@{}".format(user.split(local_part_suffix)[0], user.split("@")[1])
+            login = user.split(local_part_suffix)[0]
+            domain = user.split("@")[1]
+            user = f"{login}@{domain}"
         if self.config["config"].get("ignoreDomain", False):
             user = user.split("@")[0]
 
         backend = self.lookup_user_backend(user)
 
-        self.log("Incoming message from <{}> to <{}>, forwarding to {} backend".format(mailfrom, rcptto, backend))
+        self.log(f"Incoming message from <{mailfrom}> to <{rcptto}>, forwarding to {backend} backend")
         return self.lmtp_deliver(backend, mailfrom, rcptto, data)
 
     def reload_user_list(self, signum, frame):
         try:
             with open(self.options["config"]) as f:
                 self.config = yaml.safe_load(f)
-            self.log("Userlist reloaded. {} Entries found".format(len(self.config.get("users", {}))))
+            self.log(f"Userlist reloaded. {len(self.config.get('users', {}))} Entries found")
         except:
             pass
 
@@ -148,8 +151,10 @@ def main():
     config = parse_config(options.config)
     tmp = {"daemonize": options.daemonize, "config": options.config }
 
-    syslog.openlog(ident="lmtp-proxy", logoption=syslog.LOG_PID, facility=syslog.LOG_MAIL)
-    syslog.syslog(syslog.LOG_INFO, "Started using configuration file {}".format(options.config))
+    syslog.openlog(
+        ident="lmtp-proxy", logoption=syslog.LOG_PID, facility=syslog.LOG_MAIL
+    )
+    syslog.syslog(syslog.LOG_INFO, f"Started using configuration file {options.config}")
 
     address = config["config"].get("socket", False)
     owner = config["config"].get("owner", None)
