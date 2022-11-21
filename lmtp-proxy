@@ -57,14 +57,18 @@ class LMTPProxy(LMTPServer):
         syslog.syslog(syslog.LOG_INFO, message)
 
     def lookup_user_backend(self, user):
-        backend = self.config["users"].get(user, self.config["config"].get("fallback_backend", None))
+        backend = self.config["users"].get(
+            user, self.config["config"].get("fallback_backend", None)
+        )
         if backend is None:
             raise RuntimeError("No fallback backend configured")
         return backend
 
     def lmtp_deliver(self, backend, mailfrom, rcptto, data):
         if backend == "reject":
-            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> temporarily rejected")
+            self.log(
+                f"LMTP message from <{mailfrom}> to <{rcptto}> temporarily rejected"
+            )
             return f"450 LMTP user {rcptto} rejected. Please try again."
 
         backend_data = self.config["backends"].get(backend, None)
@@ -85,7 +89,9 @@ class LMTPProxy(LMTPServer):
         try:
             server.sendmail(mailfrom, rcptto, data)
             server.quit()
-            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> delivered to {backend} ({address_text})")
+            self.log(
+                f"LMTP message from <{mailfrom}> to <{rcptto}> delivered to {backend} ({address_text})"
+            )
             return None
         except smtplib.SMTPRecipientsRefused as e:
             server.quit()
@@ -101,12 +107,16 @@ class LMTPProxy(LMTPServer):
                 output.append(f"{code}{sep}{line}")
                 i += 1
             formatted_output = "\n".join(output)
-            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}). {formatted_output}")
+            self.log(
+                f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}). {formatted_output}"
+            )
             return "\r\n".join(output)
         except:
             server.quit()
             error = " ".join(map(str, sys.exc_info()[1]))
-            self.log(f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}): {error}")
+            self.log(
+                f"LMTP message from <{mailfrom}> to <{rcptto}> not delivered to {backend} ({address_text}): {error}"
+            )
             return error
 
     def process_message(self, peer, mailfrom, rcptto, data):
@@ -121,14 +131,18 @@ class LMTPProxy(LMTPServer):
 
         backend = self.lookup_user_backend(user)
 
-        self.log(f"Incoming message from <{mailfrom}> to <{rcptto}>, forwarding to {backend} backend")
+        self.log(
+            f"Incoming message from <{mailfrom}> to <{rcptto}>, forwarding to {backend} backend"
+        )
         return self.lmtp_deliver(backend, mailfrom, rcptto, data)
 
     def reload_user_list(self, signum, frame):
         try:
             with open(self.options["config"]) as f:
                 self.config = yaml.safe_load(f)
-            self.log(f"Userlist reloaded. {len(self.config.get('users', {}))} Entries found")
+            self.log(
+                f"Userlist reloaded. {len(self.config.get('users', {}))} Entries found"
+            )
         except:
             pass
 
@@ -136,9 +150,22 @@ def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="""An LMTP Proxy server. Accepts mail via LMTP on an incoming
             socket and can forward to different lmtp sockets depending on the
-            destination address.""")
-    parser.add_argument("-c", "--config", help="Configuration file location", nargs="?", default="/etc/lmtp-proxy.conf")
-    parser.add_argument("-D", "--daemonize", help="Daemonize program. If unspecified, run in foreground", action="store_true", default=False)
+            destination address."""
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        help="Configuration file location",
+        nargs="?",
+        default="/etc/lmtp-proxy.conf",
+    )
+    parser.add_argument(
+        "-D",
+        "--daemonize",
+        help="Daemonize program. If unspecified, run in foreground",
+        action="store_true",
+        default=False,
+    )
     return parser.parse_args()
 
 def parse_config(file):
@@ -149,7 +176,7 @@ def parse_config(file):
 def main():
     options = parse_cmdline()
     config = parse_config(options.config)
-    tmp = {"daemonize": options.daemonize, "config": options.config }
+    tmp = {"daemonize": options.daemonize, "config": options.config}
 
     syslog.openlog(
         ident="lmtp-proxy", logoption=syslog.LOG_PID, facility=syslog.LOG_MAIL
