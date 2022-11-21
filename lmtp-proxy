@@ -20,6 +20,7 @@ import sys
 from lmtpd import LMTPServer
 import yaml
 
+
 class LMTPProxy(LMTPServer):
     def __init__(self, address, owner=-1, group=-1, permissions=None):
 
@@ -146,6 +147,7 @@ class LMTPProxy(LMTPServer):
         except:
             pass
 
+
 def parse_cmdline():
     parser = argparse.ArgumentParser(
         description="""An LMTP Proxy server. Accepts mail via LMTP on an incoming
@@ -168,10 +170,12 @@ def parse_cmdline():
     )
     return parser.parse_args()
 
+
 def parse_config(file):
     with open(file) as f:
         config = yaml.safe_load(f)
     return config
+
 
 def main():
     options = parse_cmdline()
@@ -200,6 +204,7 @@ def main():
     except KeyboardInterrupt:
         asyncore.ExitNow()
 
+
 if __name__ == "__main__":
     options = parse_cmdline()
 
@@ -208,6 +213,7 @@ if __name__ == "__main__":
 
     if options.daemonize:
         from daemonize import Daemonize
+
         daemon = Daemonize(app="lmtp-proxy", pid=pid, action=main)
         daemon.start()
     main()
