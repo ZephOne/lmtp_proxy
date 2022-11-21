@@ -137,7 +137,7 @@ class LMTPProxy(LMTPServer):
         )
         return self.lmtp_deliver(backend, mailfrom, rcptto, data)
 
-    def reload_user_list(self, signum, frame):
+    def reload_user_list(self):
         try:
             with open(self.options["config"]) as f:
                 self.config = yaml.safe_load(f)
@@ -191,7 +191,6 @@ def main():
     owner = config["config"].get("owner", None)
     group = config["config"].get("group", None)
     permissions = config["config"].get("permissions", None)
-    pid = config["config"].get("pid", "/var/run/lmtp-proxy.pid")
 
     server = LMTPProxy(address, owner, group, permissions)
     server.config = config
