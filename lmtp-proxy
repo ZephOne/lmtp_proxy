@@ -10,13 +10,14 @@
 import argparse
 import asyncore
 import grp
-from lmtpd import LMTPServer
 import os
 import pwd
 import signal
 import smtplib
 import syslog
 import sys
+
+from lmtpd import LMTPServer
 import yaml
 
 class LMTPProxy(LMTPServer):
