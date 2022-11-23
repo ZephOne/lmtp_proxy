@@ -3,6 +3,7 @@
 # A simple LMTP delivery proxy
 #
 # 2017 Andreas Thienemann <andreas@bawue.net>
+# 2022 ZephOne <zephone@protonmail.com>
 # Licensed under GPLv3+
 # https://github.com/ixs/lmtp_proxy
 #
