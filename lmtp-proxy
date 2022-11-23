@@ -42,8 +42,6 @@ class LMTPProxy(Proxy):
         self.options = {}
 
     def log(self, message):
-        if not self.options.get("daemonize", False):
-            print(message)
         syslog.syslog(syslog.LOG_INFO, message)
 
     def lookup_user_backend(self, user):
@@ -130,13 +128,6 @@ def parse_cmdline():
         nargs="?",
         default="/etc/lmtp-proxy.conf",
     )
-    parser.add_argument(
-        "-D",
-        "--daemonize",
-        help="Daemonize program. If unspecified, run in foreground",
-        action="store_true",
-        default=False,
-    )
     return parser.parse_args()
 
 
@@ -163,7 +154,7 @@ def configure_unix_socket(address, owner, group, permissions):
 async def main(loop):
     options = parse_cmdline()
     config = parse_config(options.config)
-    tmp = {"daemonize": options.daemonize, "config": options.config}
+    tmp = {"config": options.config}
 
     syslog.openlog(
         ident="lmtp-proxy", logoption=syslog.LOG_PID, facility=syslog.LOG_MAIL
@@ -196,16 +187,6 @@ async def main(loop):
 
 
 if __name__ == "__main__":
-    options = parse_cmdline()
-
-    config = parse_config(options.config)
-    pid = config["config"].get("pid", "/var/run/lmtp-proxy.pid")
-
-    if options.daemonize:
-        from daemonize import Daemonize
-
-        daemon = Daemonize(app="lmtp-proxy", pid=pid, action=main)
-        daemon.start()
     loop = asyncio.get_event_loop()
     loop.create_task(main(loop=loop))
     try:
