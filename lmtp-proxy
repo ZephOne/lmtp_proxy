@@ -107,8 +107,8 @@ class LMTPProxy(Proxy):
 
     def reload_user_list(self, _signum, _frame):
         try:
-            with open(self.options["config"]) as f:
-                self.config = yaml.safe_load(f)
+            with open(self.options["config"]) as config_file:
+                self.config = yaml.safe_load(config_file)
             self.log(
                 f"Userlist reloaded. {len(self.config.get('users', {}))} Entries found"
             )
@@ -133,8 +133,8 @@ def parse_cmdline():
 
 
 def parse_config(file):
-    with open(file) as f:
-        config = yaml.safe_load(f)
+    with open(file) as config_file:
+        config = yaml.safe_load(config_file)
     return config
 
 
