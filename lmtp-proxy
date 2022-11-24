@@ -105,7 +105,7 @@ class LMTPProxy(Proxy):
                 refused[rcpt_to] = (errcode, errmsg)
         return refused
 
-    def reload_user_list(self):
+    def reload_user_list(self, _signum, _frame):
         try:
             with open(self.options["config"]) as f:
                 self.config = yaml.safe_load(f)
