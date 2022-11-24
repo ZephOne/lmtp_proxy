@@ -181,7 +181,6 @@ def main():
         controller = LMTPController(lmtp_handler, hostname=address[0], port=address[1])
 
     signal.signal(signal.SIGUSR1, lmtp_handler.reload_user_list)
-    signal.signal(signal.SIGTERM, controller.stop)
 
     lmtp_handler.log(f"Listening for incoming connection on {address_text}")
     controller.start()
