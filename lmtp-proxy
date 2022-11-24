@@ -112,8 +112,8 @@ class LMTPProxy(Proxy):
             self.log(
                 f"Userlist reloaded. {len(self.config.get('users', {}))} Entries found"
             )
-        except:
-            pass
+        except FileNotFoundError:
+            self.log(f"Unable to reload config file, {self.options['config']} file not found")
 
 
 def parse_cmdline():
