@@ -152,7 +152,7 @@ def configure_unix_socket(address, owner, group, permissions):
         os.chmod(address, permissions)
 
 
-async def main(loop):
+def main():
     options = parse_cmdline()
     config = parse_config(options.config)
     tmp = {"config": options.config}
@@ -186,11 +186,17 @@ async def main(loop):
     lmtp_handler.log(f"Listening for incoming connection on {address_text}")
     controller.start()
 
-
-if __name__ == "__main__":
     loop = asyncio.new_event_loop()
-    loop.create_task(main(loop=loop))
+
     try:
         loop.run_forever()
     except KeyboardInterrupt:
-        pass
+        print("Shutting down")
+    finally:
+        controller.stop()
+        loop.stop()
+        loop.close()
+
+
+if __name__ == "__main__":
+    main()
