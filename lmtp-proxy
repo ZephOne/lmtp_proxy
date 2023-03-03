@@ -13,6 +13,7 @@ import asyncio
 import grp
 import os
 import pwd
+import re
 import signal
 import smtplib
 import syslog
@@ -21,6 +22,11 @@ from aiosmtpd.controller import Controller, UnixSocketController
 from aiosmtpd.handlers import Proxy
 from aiosmtpd.lmtp import LMTP
 import yaml
+
+EMPTYBYTES = b''
+COMMASPACE = ', '
+CRLF = b'\r\n'
+NLCRE = re.compile(br'\r\n|\r|\n')
 
 
 class LMTPController(Controller):
@@ -65,19 +71,42 @@ class LMTPProxy(Proxy):
             user = user.split("@")[0]
         return user
 
-    def _deliver(self, mail_from, rcpt_tos, data):
+    async def handle_DATA(self, server, session, envelope):
+        if isinstance(envelope.content, str):
+            content = envelope.original_content
+        else:
+            content = envelope.content
+        lines = content.splitlines(keepends=True)
+        # Look for the last header
+        _i = 0
+        ending = CRLF
+        for _i, line in enumerate(lines):  # pragma: nobranch
+            if NLCRE.match(line):
+                ending = line
+                break
+        peer = session.peer[0].encode('ascii')
+        lines.insert(_i, b'X-Peer: %s%s' % (peer, ending))
+        data = EMPTYBYTES.join(lines)
+        refused = []
+        for rcpt_to in envelope.rcpt_tos:
+            refused.append(self._deliver(envelope.mail_from, rcpt_to, data))
+        if refused and refused != [{}]:
+            self.log(f"we got some refusals: {refused}")
+        return '250 OK'
+
+    def _deliver(self, mail_from, rcpt_to, data):
         """Overide aiosmtpd.handlers.Proxy._deliver to use an LMTP client"""
         refused = {}
 
-        user = self.lookup_user(rcpt_tos[0])
+        user = self.lookup_user(rcpt_to)
 
         backend = self.lookup_user_backend(user)
 
         if backend == "reject":
             self.log(
-                f"LMTP message from <{mail_from}> to <{rcpt_tos[0]}> temporarily rejected"
+                f"LMTP message from <{mail_from}> to <{rcpt_to}> temporarily rejected"
             )
-            return f"450 LMTP user {rcpt_tos} rejected. Please try again."
+            return f"450 LMTP user {rcpt_to} rejected. Please try again."
 
         backend_data = self.config["backends"].get(backend, None)
         if backend_data is None:
@@ -101,8 +130,7 @@ class LMTPProxy(Proxy):
             self.log(f"got {lmtp_send_error.__class__}")
             errcode = getattr(lmtp_send_error, "smtp_code", -1)
             errmsg = getattr(lmtp_send_error, "smtp_error", b"ignore")
-            for rcpt_to in rcpt_tos:
-                refused[rcpt_to] = (errcode, errmsg)
+            refused[rcpt_to] = (errcode, errmsg)
         return refused
 
     def reload_user_list(self, _signum, _frame):
