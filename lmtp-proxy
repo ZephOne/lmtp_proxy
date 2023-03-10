@@ -87,12 +87,16 @@ class LMTPProxy(Proxy):
         peer = session.peer[0].encode('ascii')
         lines.insert(_i, b'X-Peer: %s%s' % (peer, ending))
         data = EMPTYBYTES.join(lines)
-        refused = []
         for rcpt_to in envelope.rcpt_tos:
-            refused.append(self._deliver(envelope.mail_from, rcpt_to, data))
-        if refused and refused != [{}]:
-            self.log(f"we got some refusals: {refused}")
+            status = self._deliver(envelope.mail_from, rcpt_to, data)
+            if not status:
+                await server.push(b'250 2.0.0 Ok')
+            else:
+                (code, resp) = status[rcpt_to.split('@')[0]]
+                message = f"{code} {resp.decode()}"
+                await server.push(bytes(message, "utf-8"))
         return '250 OK'
+
 
     def _deliver(self, mail_from, rcpt_to, data):
         """Overide aiosmtpd.handlers.Proxy._deliver to use an LMTP client"""
