@@ -95,7 +95,7 @@ class LMTPProxy(Proxy):
                 (code, resp) = status[rcpt_to.split('@')[0]]
                 message = f"{code} {resp.decode()}"
                 await server.push(bytes(message, "utf-8"))
-        return '250 OK'
+        return '221 2.0.0 Bye'
 
 
     def _deliver(self, mail_from, rcpt_to, data):
