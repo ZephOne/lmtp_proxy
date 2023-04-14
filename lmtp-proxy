@@ -92,7 +92,10 @@ class LMTPProxy(Proxy):
             if not status:
                 await server.push(b"250 2.0.0 Ok")
             else:
-                (code, resp) = status[rcpt_to.split("@")[0]]
+                try:
+                    (code, resp) = status[rcpt_to.split("@")[0]]
+                except KeyError:
+                    (code, resp) = status[rcpt_to]
                 message = f"{code} {resp.decode()}"
                 await server.push(bytes(message, "utf-8"))
         return "221 2.0.0 Bye"
