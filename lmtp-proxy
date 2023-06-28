@@ -62,7 +62,7 @@ class LMTPProxy(Proxy):
     def lookup_user(self, rcpt_to):
         local_part_suffix = self.config["config"].get("localPartSuffix", False)
 
-        user = rcpt_to
+        user = rcpt_to.lower()
         if local_part_suffix:
             login = user.split(local_part_suffix)[0]
             domain = user.split("@")[1]
