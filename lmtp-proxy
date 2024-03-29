@@ -33,14 +33,18 @@ class LMTPController(Controller):
     """Controller for LMTP usage"""
 
     def factory(self):
-        return LMTP(self.handler, **self.SMTP_kwargs)
+        lmtp_controller = LMTP(self.handler, **self.SMTP_kwargs)
+        lmtp_controller.line_length_limit = 10000
+        return lmtp_controller
 
 
 class UnixSocketLMTPController(UnixSocketController):
     """UnixSocketController for LMTP usage"""
 
     def factory(self):
-        return LMTP(self.handler, **self.SMTP_kwargs)
+        lmtp_controller = LMTP(self.handler, **self.SMTP_kwargs)
+        lmtp_controller.line_length_limit = 10000
+        return lmtp_controller
 
 
 class LMTPProxy(Proxy):
