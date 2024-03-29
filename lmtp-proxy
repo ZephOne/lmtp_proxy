@@ -29,18 +29,22 @@ CRLF = b"\r\n"
 NLCRE = re.compile(rb"\r\n|\r|\n")
 
 
+class CustomLMTP(LMTP):
+    line_length_limit = 10000
+
+
 class LMTPController(Controller):
     """Controller for LMTP usage"""
 
     def factory(self):
-        return LMTP(self.handler, **self.SMTP_kwargs)
+        return CustomLMTP(self.handler, **self.SMTP_kwargs)
 
 
 class UnixSocketLMTPController(UnixSocketController):
     """UnixSocketController for LMTP usage"""
 
     def factory(self):
-        return LMTP(self.handler, **self.SMTP_kwargs)
+        return CustomLMTP(self.handler, **self.SMTP_kwargs)
 
 
 class LMTPProxy(Proxy):
